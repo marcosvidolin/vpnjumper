@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-redis/redis"
 	"github.com/marcosvidolin/vpnjumper/message"
@@ -38,34 +39,31 @@ func (c *Client) Run() error {
 		reqJson, err := json.Marshal(req)
 		if err != nil {
 			c.Logger.Println(err)
+			return
 		}
 		c.publish("requests", string(reqJson))
 
 		respCh := make(chan string)
 		go c.subscribe("responses", respCh)
+
+		var resp message.Response
 		for msg := range respCh {
 			c.Logger.Println("response received:", msg)
-			var resp message.Response
 			if err := json.Unmarshal([]byte(msg), &resp); err != nil {
 				c.Logger.Printf("failed to unmarshal response: %v", err)
-				continue
+				return
 			}
-
-			r := message.Response{
-				Status:     resp.Status,
-				StatusCode: resp.StatusCode,
-				Header:     resp.Header,
-			}
-			bresp, err := json.Marshal(r)
-			if err != nil {
-				c.Logger.Println(err)
-			}
-
-			c.Logger.Println(string(bresp))
 			break
 		}
+
+		for k, v := range resp.Header {
+			w.Header().Set(k, strings.Join(v, ", "))
+		}
+		w.WriteHeader(resp.StatusCode)
+		w.Write([]byte(resp.Body))
 	})
 
+	c.Logger.Printf("listenning on port %s", c.Addr)
 	return http.ListenAndServe(c.Addr, nil)
 }
 
@@ -88,4 +86,5 @@ func (c *Client) publish(channel, message string) {
 	if err != nil {
 		c.Logger.Printf("failed to publish message: %v", err)
 	}
+	c.Logger.Printf("message published: %s", message)
 }
