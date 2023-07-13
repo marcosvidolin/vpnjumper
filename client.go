@@ -47,13 +47,12 @@ func (c *Client) Run() error {
 		go c.subscribe("responses", respCh)
 
 		var resp message.Response
-		for msg := range respCh {
-			c.Logger.Println("response received:", msg)
-			if err := json.Unmarshal([]byte(msg), &resp); err != nil {
-				c.Logger.Printf("failed to unmarshal response: %v", err)
-				return
-			}
-			break
+		msg := <-respCh
+
+		c.Logger.Println("response received:", msg)
+		if err := json.Unmarshal([]byte(msg), &resp); err != nil {
+			c.Logger.Printf("failed to unmarshal response: %v", err)
+			return
 		}
 
 		for k, v := range resp.Header {
