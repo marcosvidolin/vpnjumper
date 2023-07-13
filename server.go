@@ -21,38 +21,33 @@ type Server struct {
 	Logger      *log.Logger
 }
 
-func (f *Server) Run() error {
+func (s *Server) Run() error {
 	respCh := make(chan string)
 
-	go f.subscribe("requests", respCh)
+	go s.subscribe("requests", respCh)
 
 	go func() {
 		for msg := range respCh {
-			f.Logger.Println("request received:", msg)
+			s.Logger.Println("message received:", msg)
 			var req message.Request
 			if err := json.Unmarshal([]byte(msg), &req); err != nil {
-				f.Logger.Printf("failed to unmarshal request: %v", err)
+				s.Logger.Printf("failed to unmarshal request: %v", err)
 				continue
 			}
-			resp, err := f.processRequest(req.HttpRequest())
+			resp, err := s.processRequest(req.HttpRequest())
 			if err != nil {
-				f.Logger.Println(err)
+				s.Logger.Println(err)
 				continue
 			}
 
-			r := message.Response{
-				Status:     resp.Status,
-				StatusCode: resp.StatusCode,
-				Header:     resp.Header,
-			}
-			bresp, err := json.Marshal(r)
+			bresp, err := json.Marshal(resp)
 			if err != nil {
-				f.Logger.Println(err)
+				s.Logger.Println(err)
 				continue
 			}
 
-			f.Logger.Println(r)
-			go f.publish("responses", string(bresp))
+			s.Logger.Println(resp)
+			go s.publish("responses", string(bresp))
 		}
 	}()
 
@@ -64,7 +59,7 @@ func (f *Server) Run() error {
 	return nil
 }
 
-func (f *Server) processRequest(r *http.Request) (*http.Response, error) {
+func (f *Server) processRequest(r *http.Request) (*message.Response, error) {
 	targetURL := fmt.Sprintf("%s%s", r.Host, r.URL)
 
 	f.Logger.Printf("target: %s", targetURL)
@@ -101,11 +96,22 @@ func (f *Server) processRequest(r *http.Request) (*http.Response, error) {
 
 	resp, err := f.HttpClient.Do(req)
 	if err != nil {
-		return resp, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	return resp, nil
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	respp := &message.Response{
+		Status:     resp.Status,
+		StatusCode: resp.StatusCode,
+		Header:     resp.Header,
+		Body:       string(body),
+	}
+
+	return respp, nil
 }
 
 func (f *Server) subscribe(channel string, respCh chan<- string) {
